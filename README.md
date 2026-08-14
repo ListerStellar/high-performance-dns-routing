@@ -1,20 +1,55 @@
-# **CDN77 Task: Сache/DNS**
-- V adresari /task1 naleznete reseni prvni ulohy (wildcard DNS record) a reseni teoretickych otazek.
-- V adresari /task2 naleznete reseni druhe ulohy (CDN DNS).
+# High-Performance DNS & CDN Routing
 
-## Zpusob reseni a architektura 
-- DNS wildcard (uloha 3): Ulohu jsem vyresil v C++. Pouzil jsem std::unordered_set. Vyhledavani tak probiha v prumernem case O(1) vzhledem k poctu ulozenych zaznamu. Algoritmus u prichozi domeny (po prevodu na lowercase) postupne odtrhava subdomeny zleva i zprava a testuje, zda v setu neexistuje odpovidajici wildcard zaznam.
-- CDN DNS (uloha 2): Ulohu jsem vyresil v C++. Pro vyreseni jsem implementoval jednoduchy binarni strom. Algoritmus iteruje bit po bitu pres IPv6 adresu a zanoruje se do stromu. Behem pruchodu si pamatuje posledni platny pop_id a prefix_scope, cimz najde nejvic specificky subnet.
-Teoreticke otazky Nginx: Analyzoval jsem dokumentaci Nginxu a castecne jeho kod.
+This repository contains two high-performance C++ networking components designed to handle DNS wildcard matching and CDN IPv6 routing efficiently. These algorithms focus on optimal time complexities for high-throughput networking environments.
 
-## Zaseky a jejich reseni
-- U CDN DNS jsem trochu zasekl na parsovani ipv6 adresy ze stringu do uint8_t, delat to rucne zni velmi neprijemne. Pak ale jsem dozvedel o funkci inet_pton, coz to krasne resi.
+## Components
 
-## Alternativni pristupy a skalovani
-- Jak jsem si poznamenal v task2/node.md, muj jednoduchy binarni strom pro IPv6 sice funguje casove logaritmicky k delce IP adresy, ale ma spatnou prostorovou slozitost. U rozsahlych dat by to mohlo znamenat vytvoreni obrovskeho mnozstvi nodu v pameti. Mnohem efektivnejsim pristupem by bylo pouzit Radix Tree. Radix Tree by ale zabral mnohem vic casu na implementaci, proto jsem pro ucely tohoto zadani zvolil jednonuchy binarni strom.
+### 1. Wildcard DNS Matcher (`/wildcard-dns-matcher`)
+A highly optimized C++ component for evaluating DNS wildcard records in **O(1) average time complexity**.
 
-## Co by slo zlepsit pro produkci
-- Nahradil bych binarni strom za zmineny Radix Tree.
-- V C++ kodu by bylo bezpecnejsi vymenit raw pointery a manualni spravu pameti za smart pointery, aby se predeslo memory leakum.
-- Pridal bych mutexy, pokud by ke strukturam pristupovalo vice vlaken soucasne.
-- Melo by pridat rozsahlejsi validace vstupnich dat, napr. osetreni spatne naformatovanych IPv6 adres v routing datech.
+**Features:**
+- Exact domain matches.
+- Left (`*.domain.com`) and right (`domain.*`) wildcard resolution.
+- Subdomain string manipulation and robust edge-case handling.
+- Implemented using `std::unordered_set` for O(1) average time lookups.
+- Case-insensitive checking (in compliance with Nginx / RFC standards).
+
+**How it works:**
+The algorithm converts the incoming domain to lowercase. It then iteratively splits and evaluates subdomains from the left and right, matching them against the hash set of known wildcard records. This completely avoids O(N) linear iteration over all records.
+
+---
+
+### 2. IPv6 CDN Routing Tree (`/ipv6-cdn-router`)
+A specialized binary tree implementation for determining the closest CDN Point of Presence (PoP) based on the client's IPv6 subnet, commonly used in EDNS Client Subnet (ECS) resolution (RFC 7871).
+
+**Features:**
+- Longest Prefix Match (LPM) logic for IPv6 addresses.
+- Pointer-based Binary Tree (Trie) for IP routing.
+- Direct conversion of string subnets to `uint8_t` arrays using `inet_pton` for maximum speed.
+- High-performance bit-by-bit tree traversal to resolve queries to the most specific PoP.
+
+**How it works:**
+The data structure parses a comprehensive list of routing data (subnets, prefix masks, and PoP IDs) and constructs a binary tree. When an ECS query is received, the tree is traversed bit by bit based on the IPv6 address. The algorithm keeps track of the deepest valid `pop_id` and `prefix_scope` encountered, guaranteeing the most specific subnet match.
+
+## Future Improvements for Production Use
+- **Radix Tree Implementation:** Replace the simple Binary Tree in the IPv6 CDN router with a Radix Tree (Patricia Trie) to significantly reduce the spatial complexity (node count in memory) on massive BGP routing tables.
+- **Smart Pointers:** Refactor raw pointer management to `std::unique_ptr` / `std::shared_ptr` to ensure zero memory leaks.
+- **Thread Safety:** Introduce mutexes or read-write locks (`std::shared_mutex`) to allow safe concurrent lookups across multiple worker threads.
+- **Data Validation:** Add robust input validation for incoming IPv6 configurations and handle potentially malformed routing data safely.
+
+## Build and Run (CMake)
+The project is configured with **CMake** for an easy, cross-platform build process. A modern C++ compiler supporting C++20 is required (for features like `starts_with` and `ends_with`).
+
+```bash
+# 1. Clone the repository and navigate into it
+# 2. Create a build directory and configure the project
+mkdir build && cd build
+cmake ..
+
+# 3. Compile the binaries
+cmake --build .
+
+# 4. Run the tests
+./wildcard-dns-matcher/dns-matcher
+./ipv6-cdn-router/ipv6-router
+```
